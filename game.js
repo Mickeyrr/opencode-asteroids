@@ -62,16 +62,25 @@ const RADII  = [0, 16, 30, 50];   // por tamaño 1, 2, 3
 const SPEEDS = [0, 85, 55, 32];   // velocidad base por tamaño
 const POINTS = [0, 100, 50, 20];  // puntos por tamaño
 
+// Estrella fugaz: asteroide veloz, no se parte y caduca
+const FUGAZ_CHANCE      = 0.5;   // nivel 1
+const FUGAZ_CHANCE_STEP = 0.1;   // +10% por nivel
+const FUGAZ_SPEED       = 210;
+const FUGAZ_TTL         = 7;
+const FUGAZ_SCORE_MULT  = 3;
+
 class Asteroid {
-  constructor(x, y, size = 3) {
+  constructor(x, y, size = 3, fugaz = false) {
     this.x    = x;
     this.y    = y;
     this.size = size;
+    this.fugaz = fugaz;
     this.radius = RADII[size];
     this.dead = false;
+    this.ttl = fugaz ? FUGAZ_TTL : null;
 
     const angle = rand(0, Math.PI * 2);
-    const speed = SPEEDS[size] + rand(-15, 15);
+    const speed = fugaz ? FUGAZ_SPEED + rand(-20, 20) : SPEEDS[size] + rand(-15, 15);
     this.vx = Math.cos(angle) * speed;
     this.vy = Math.sin(angle) * speed;
     this.rotSpeed = rand(-1.2, 1.2);
@@ -91,10 +100,14 @@ class Asteroid {
     this.x   = wrap(this.x + this.vx * dt, W);
     this.y   = wrap(this.y + this.vy * dt, H);
     this.rot += this.rotSpeed * dt;
+    if (this.ttl !== null) {
+      this.ttl -= dt;
+      if (this.ttl <= 0) this.dead = true;
+    }
   }
 
   split() {
-    if (this.size <= 1) return [];
+    if (this.fugaz || this.size <= 1) return [];
     return [
       new Asteroid(this.x, this.y, this.size - 1),
       new Asteroid(this.x, this.y, this.size - 1),
@@ -102,10 +115,15 @@ class Asteroid {
   }
 
   draw() {
+    // Parpadea cuando está a punto de desvanecerse
+    if (this.fugaz && this.ttl < 2 && Math.floor(this.ttl * 8) % 2 === 0) return;
+
+    if (this.fugaz) this.drawTrail();
+
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(this.rot);
-    ctx.strokeStyle = '#fff';
+    ctx.strokeStyle = this.fugaz ? '#ffd166' : '#fff';
     ctx.lineWidth   = 1.5;
     ctx.lineJoin    = 'round';
     ctx.beginPath();
@@ -115,6 +133,24 @@ class Asteroid {
     ctx.closePath();
     ctx.stroke();
     ctx.restore();
+  }
+
+  drawTrail() {
+    const angle    = Math.atan2(this.vy, this.vx);
+    const SEGMENTS = 3;
+    const LENGTH   = 34;
+    const offset   = this.radius; // arranca en el borde, no en el centro
+    for (let i = 0; i < SEGMENTS; i++) {
+      const from  = offset + (i / SEGMENTS) * LENGTH;
+      const to    = offset + ((i + 1) / SEGMENTS) * LENGTH;
+      const alpha = 0.55 * (1 - i / SEGMENTS);
+      ctx.strokeStyle = `rgba(255,209,102,${alpha.toFixed(2)})`;
+      ctx.lineWidth   = 3 - i;
+      ctx.beginPath();
+      ctx.moveTo(this.x - Math.cos(angle) * from, this.y - Math.sin(angle) * from);
+      ctx.lineTo(this.x - Math.cos(angle) * to,   this.y - Math.sin(angle) * to);
+      ctx.stroke();
+    }
   }
 }
 
@@ -298,13 +334,15 @@ let deadTimer;
 
 function spawnAsteroids(count) {
   const SAFE_DIST = 130;
+  const chance = Math.min(FUGAZ_CHANCE + (level - 1) * FUGAZ_CHANCE_STEP, 1);
+  const fugazIndex = Math.random() < chance ? randInt(0, count - 1) : -1;
   for (let i = 0; i < count; i++) {
     let x, y;
     do {
       x = rand(0, W);
       y = rand(0, H);
     } while (Math.hypot(x - W / 2, y - H / 2) < SAFE_DIST);
-    asteroids.push(new Asteroid(x, y, 3));
+    asteroids.push(new Asteroid(x, y, 3, i === fugazIndex));
   }
 }
 
@@ -362,6 +400,7 @@ function update(dt) {
     particles.forEach(p => p.update(dt));
     particles = particles.filter(p => !p.dead);
     asteroids.forEach(a => a.update(dt));
+    asteroids = asteroids.filter(a => !a.dead);
     powerups.forEach(p => p.update(dt));
     powerups = powerups.filter(p => !p.dead);
     if (deadTimer <= 0) { state = 'playing'; ship.reset(); }
@@ -390,8 +429,8 @@ function update(dt) {
       if (!a.dead && !b.dead && dist(b, a) < a.radius) {
         b.dead = true;
         a.dead = true;
-        score += POINTS[a.size];
-        explode(a.x, a.y, a.size * 5);
+        score += POINTS[a.size] * (a.fugaz ? FUGAZ_SCORE_MULT : 1);
+        explode(a.x, a.y, a.size * (a.fugaz ? 10 : 5));
         newAsteroids.push(...a.split());
         if (Math.random() < POWERUP_DROP_CHANCE)
           powerups.push(new PowerUp(a.x, a.y));
