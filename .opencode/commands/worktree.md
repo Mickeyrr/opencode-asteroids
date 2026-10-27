@@ -19,4 +19,4 @@ no hagas commits, no hagas ningún paso adicional.
 Si "$ARGUMENTS" está vacío o no permite derivar un nombre, no ejecutes nada y
 pide el nombre.
 
-Si los argumentos es muy largos, simplificalos a un nombre significativo
+Si los argumentos son muy largos, simplificalos a un nombre significativo
